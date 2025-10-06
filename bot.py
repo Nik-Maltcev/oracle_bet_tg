@@ -115,7 +115,21 @@ async def analyze_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = call_perplexity(prompt)
     
     # Форматируем ответ (убираем markdown символы из результата)
-    clean_result = result.replace('**', '').replace('*', '')
+    clean_result = result.replace('**', '').replace('*', '').replace('###', '').replace('##', '').replace('#', '')
+    
+    # Преобразуем таблицы в читаемый формат
+    lines = clean_result.split('\n')
+    formatted_lines = []
+    for line in lines:
+        if '|' in line and not line.strip().startswith('|---'):
+            # Убираем символы таблицы и форматируем
+            clean_line = line.replace('|', ' ').strip()
+            if clean_line:
+                formatted_lines.append(clean_line)
+        elif not line.strip().startswith('|---'):
+            formatted_lines.append(line)
+    
+    clean_result = '\n'.join(formatted_lines)
     
     response = f"⚽ <b>Анализ матча</b>\n"
     response += f"<b>{team1} - {team2}</b>\n"

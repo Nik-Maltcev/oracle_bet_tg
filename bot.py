@@ -78,15 +78,14 @@ async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("⭐ 3 прогноза - 100 звезд", callback_data="buy_3")],
         [InlineKeyboardButton("⭐ 15 прогнозов - 250 звезд", callback_data="buy_15")],
-        [InlineKeyboardButton("🎁 10 прогнозов БЕСПЛАТНО", url="https://t.me/tribute/app?startapp=svTk")]
+        [InlineKeyboardButton("🎁 Подпишись и получи 10 прогнозов БЕСПЛАТНО", url="https://t.me/tribute/app?startapp=svTk")]
     ]
     
     await query.edit_message_text(
         "💰 Выберите пакет:\n\n"
         "⭐ 3 прогноза - 100 звезд\n"
         "⭐ 15 прогнозов - 250 звезд\n\n"
-        "🎁 Или получите 10 прогнозов БЕСПЛАТНО\n"
-        "при покупке подписки на премиум канал!",
+        "🎁 Или подпишись и получи 10 прогнозов БЕСПЛАТНО!",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 

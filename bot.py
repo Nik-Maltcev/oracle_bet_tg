@@ -1,6 +1,7 @@
 import os
 import re
-from datetime import datetime
+import json
+from datetime import datetime, date
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import requests
@@ -65,8 +66,57 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Я проанализирую матч и дам прогноз!"
     )
 
+def load_usage():
+    """Загрузка данных об использовании"""
+    try:
+        with open('usage.json', 'r') as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_usage(data):
+    """Сохранение данных об использовании"""
+    with open('usage.json', 'w') as f:
+        json.dump(data, f)
+
+def can_use_today(user_id):
+    """Проверка лимита на сегодня"""
+    usage = load_usage()
+    today = str(date.today())
+    user_key = str(user_id)
+    
+    if user_key not in usage:
+        usage[user_key] = {}
+    
+    if today not in usage[user_key]:
+        usage[user_key] = {today: 0}
+    
+    return usage[user_key].get(today, 0) < 1
+
+def increment_usage(user_id):
+    """Увеличение счетчика использования"""
+    usage = load_usage()
+    today = str(date.today())
+    user_key = str(user_id)
+    
+    if user_key not in usage:
+        usage[user_key] = {}
+    
+    usage[user_key][today] = usage[user_key].get(today, 0) + 1
+    save_usage(usage)
+
 async def analyze_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка запроса на анализ матча"""
+    user_id = update.effective_user.id
+    
+    # Проверка лимита
+    if not can_use_today(user_id):
+        await update.message.reply_text(
+            "⛔ Вы уже использовали свой прогноз на сегодня.\n"
+            "Возвращайтесь завтра!"
+        )
+        return
+    
     user_input = update.message.text
     team1, team2, match_date = parse_match_input(user_input)
     
@@ -79,6 +129,9 @@ async def analyze_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     await update.message.reply_text("⏳ Анализирую матч, подожди...")
+    
+    # Увеличиваем счетчик
+    increment_usage(user_id)
     
     prompt = f"""Проанализируй матч {team1} vs {team2} на дату {match_date}.
 

@@ -114,11 +114,13 @@ async def analyze_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     result = call_perplexity(prompt)
     
-    # Форматируем ответ
+    # Форматируем ответ (убираем markdown символы из результата)
+    clean_result = result.replace('**', '').replace('*', '')
+    
     response = f"⚽ <b>Анализ матча</b>\n"
     response += f"<b>{team1} - {team2}</b>\n"
     response += f"📅 Дата: {match_date}\n\n"
-    response += result
+    response += clean_result
     
     await update.message.reply_text(response, parse_mode="HTML")
 

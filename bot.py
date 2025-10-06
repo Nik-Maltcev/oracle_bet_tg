@@ -2,8 +2,8 @@ import os
 import re
 import json
 from datetime import datetime, date
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, PreCheckoutQueryHandler, filters, ContextTypes
 import requests
 
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
@@ -57,63 +57,123 @@ def parse_match_input(text: str) -> tuple:
     return None, None, None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /start"""
+    user_id = update.effective_user.id
+    balance = get_balance(user_id)
+    
+    keyboard = [[InlineKeyboardButton("💰 Купить прогнозы", callback_data="buy")]]
+    
     await update.message.reply_text(
-        "⚽ Привет! Я бот-аналитик футбольных матчей.\n\n"
-        "Отправь мне матч в формате:\n"
-        "команда1 - команда2 дд.мм.гг\n\n"
-        "Например: ювентус - милан 07.10.25\n\n"
-        "Я проанализирую матч и дам прогноз!"
+        f"⚽ Привет! Я бот-аналитик футбольных матчей.\n\n"
+        f"💎 Ваш баланс: {balance} прогнозов\n\n"
+        f"Отправь матч в формате:\n"
+        f"команда1 - команда2 дд.мм.гг\n\n"
+        f"Например: ювентус - милан 07.10.25",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-def load_usage():
-    """Загрузка данных об использовании"""
+async def buy_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("⭐ 3 прогноза - 100 звезд", callback_data="buy_3")],
+        [InlineKeyboardButton("⭐ 15 прогнозов - 250 звезд", callback_data="buy_15")],
+        [InlineKeyboardButton("🎁 10 прогнозов БЕСПЛАТНО", url="https://t.me/tribute/app?startapp=svTk")]
+    ]
+    
+    await query.edit_message_text(
+        "💰 Выберите пакет:\n\n"
+        "⭐ 3 прогноза - 100 звезд\n"
+        "⭐ 15 прогнозов - 250 звезд\n\n"
+        "🎁 Или получите 10 прогнозов БЕСПЛАТНО\n"
+        "при покупке подписки на премиум канал!",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def process_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    packages = {
+        "buy_3": (3, 100, "3 прогноза"),
+        "buy_15": (15, 250, "15 прогнозов")
+    }
+    
+    if query.data not in packages:
+        return
+    
+    predictions, stars, title = packages[query.data]
+    
+    await context.bot.send_invoice(
+        chat_id=query.message.chat_id,
+        title=title,
+        description=f"Покупка {predictions} прогнозов на футбольные матчи",
+        payload=f"{predictions}",
+        provider_token="",
+        currency="XTR",
+        prices=[LabeledPrice(label=title, amount=stars)]
+    )
+
+async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.pre_checkout_query.answer(ok=True)
+
+async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    predictions = int(update.message.successful_payment.invoice_payload)
+    
+    add_balance(user_id, predictions)
+    balance = get_balance(user_id)
+    
+    await update.message.reply_text(
+        f"✅ Оплата прошла успешно!\n\n"
+        f"💎 Добавлено: {predictions} прогнозов\n"
+        f"💎 Ваш баланс: {balance} прогнозов"
+    )
+
+def load_data():
     try:
-        with open('usage.json', 'r') as f:
+        with open('data.json', 'r') as f:
             return json.load(f)
     except:
-        return {}
+        return {"usage": {}, "balance": {}}
 
-def save_usage(data):
-    """Сохранение данных об использовании"""
-    with open('usage.json', 'w') as f:
+def save_data(data):
+    with open('data.json', 'w') as f:
         json.dump(data, f)
 
-def can_use_today(user_id):
-    """Проверка лимита на сегодня"""
-    usage = load_usage()
-    today = str(date.today())
-    user_key = str(user_id)
-    
-    if user_key not in usage:
-        usage[user_key] = {}
-    
-    if today not in usage[user_key]:
-        usage[user_key] = {today: 0}
-    
-    return usage[user_key].get(today, 0) < 1
+def get_balance(user_id):
+    data = load_data()
+    return data["balance"].get(str(user_id), 0)
 
-def increment_usage(user_id):
-    """Увеличение счетчика использования"""
-    usage = load_usage()
-    today = str(date.today())
+def add_balance(user_id, amount):
+    data = load_data()
     user_key = str(user_id)
-    
-    if user_key not in usage:
-        usage[user_key] = {}
-    
-    usage[user_key][today] = usage[user_key].get(today, 0) + 1
-    save_usage(usage)
+    data["balance"][user_key] = data["balance"].get(user_key, 0) + amount
+    save_data(data)
+
+def can_use(user_id):
+    return get_balance(user_id) > 0
+
+def use_prediction(user_id):
+    data = load_data()
+    user_key = str(user_id)
+    if data["balance"].get(user_key, 0) > 0:
+        data["balance"][user_key] -= 1
+        save_data(data)
+        return True
+    return False
 
 async def analyze_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка запроса на анализ матча"""
     user_id = update.effective_user.id
     
-    # Проверка лимита
-    if not can_use_today(user_id):
+    if not can_use(user_id):
+        keyboard = [[InlineKeyboardButton("💰 Купить прогнозы", callback_data="buy")]]
         await update.message.reply_text(
-            "⛔ Вы уже использовали свой прогноз на сегодня.\n"
-            "Возвращайтесь завтра!"
+            "⛔ У вас закончились прогнозы!\n\n"
+            "Купите пакет прогнозов или получите 10 бесплатно\n"
+            "при покупке подписки на премиум канал.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
     
@@ -130,8 +190,9 @@ async def analyze_match(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text("⏳ Анализирую матч, подожди...")
     
-    # Увеличиваем счетчик
-    increment_usage(user_id)
+    if not use_prediction(user_id):
+        await update.message.reply_text("❌ Ошибка списания прогноза")
+        return
     
     prompt = f"""Проанализируй матч {team1} vs {team2} на дату {match_date}.
 
@@ -200,6 +261,10 @@ def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(buy_menu, pattern="^buy$"))
+    app.add_handler(CallbackQueryHandler(process_buy, pattern="^buy_"))
+    app.add_handler(PreCheckoutQueryHandler(precheckout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, analyze_match))
     
     print("✅ Бот запущен!")

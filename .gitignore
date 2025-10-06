@@ -1,4 +1,4 @@
 .env
-usage.json
+data.json
 __pycache__/
 *.pyc
